@@ -19,6 +19,16 @@
 #define CYMBAL_TIME 500
 #define NOODLE PA1
 
+// states
+#define INIT 0
+#define ACTIVE 1
+
+// commands
+#define NO_COMMAND -1
+#define INIT_COMMAND 0
+#define NO_PARAMETER -1
+#define OFFSET_PARAMETER 0
+
 #define PUMP PA0
 
 #define ADV 60
@@ -32,6 +42,15 @@ bool bike_on = false;
 uint64 lastCymbalHit = 0;
 bool cymbalOn = false;
 bool noodleOn = false;
+
+int state = INIT;
+
+// commands
+int command = NO_COMMAND;
+int parameter = NO_PARAMETER;
+
+// parameters
+int offset = 0;
 
 void setup() {
   pinMode(EN1, OUTPUT);
@@ -52,6 +71,8 @@ void setup() {
 
   Serial.begin(9600);
 }
+
+
 
 void readEnc() {
   int val = analogRead(BIKE);
@@ -82,13 +103,6 @@ void readEnc() {
   noodleOn = noodle > 1000;
 }
 
-uint8_t mapper(uint16_t val, uint16_t a, uint16_t b, uint8_t c, uint8_t d) {
-  uint64_t e = (uint64_t) d - (uint64_t) c;
-  uint64_t f = (uint64_t) val - (uint64_t) a;
-  uint64_t g = (uint64_t) b - (uint64_t) a;
-  return (uint8_t) (c + e * f / g);
-}
-
 void showColor(int stripEnable, uint8 r, uint8 g, uint8 b) {
   long ctime = min(CYMBAL_TIME, millis() - lastCymbalHit);
   long cbrightness = map(ctime*ctime, 0, CYMBAL_TIME*CYMBAL_TIME, 255, 0);
@@ -99,9 +113,9 @@ void showColor(int stripEnable, uint8 r, uint8 g, uint8 b) {
     int val = 1000 - abs(3*(32*i+count)%2000 - 1000);
     int32_t color = colorMap(val, r, g, b);
     int32_t mixedColor = strip.Color(
-      mapper(ctime, 0, CYMBAL_TIME, cbrightness, (color>>16)&0xff),
-      mapper(ctime, 0, CYMBAL_TIME, cbrightness, (color>>8)&0xff),
-      mapper(ctime, 0, CYMBAL_TIME, cbrightness, color&0xff)
+      map(ctime, 0, CYMBAL_TIME, cbrightness, (color>>16)&0xff),
+      map(ctime, 0, CYMBAL_TIME, cbrightness, (color>>8)&0xff),
+      map(ctime, 0, CYMBAL_TIME, cbrightness, color&0xff)
     );
     if (noodleOn) {
       strip.setPixelColor(i, 0xff0000);
@@ -111,20 +125,43 @@ void showColor(int stripEnable, uint8 r, uint8 g, uint8 b) {
   }
   readEnc();
   strip.show();
-  readEnc();
-  delay(1);
-  readEnc();
-  delay(1);
-  readEnc();
-  delay(1);
-  readEnc();
   digitalWrite(stripEnable, LOW);
-
+  readEnc();
+  delay(1);
+  readEnc();
+  delay(1);
+  readEnc();
+  delay(1);
+  readEnc();
 }
 
-void loop() {
+void readInitData() {
+  if (Serial.available()) {
+    switch (command) {
+      case NO_COMMAND:
+        command = Serial.read();
+        parameter = 0;
+        break;
+      case INIT_COMMAND:
+        int value = Serial.read();
+        switch (parameter) {
+          case OFFSET_PARAMETER:
+            offset = value;
+            parameter = NO_PARAMETER;
+            command = NO_COMMAND;
+            state = ACTIVE;
+            break;
+          default:
+            parameter = NO_PARAMETER;
+            command = NO_COMMAND;
+        }
+    }
+  }
+}
+
+void runInteractive() {
   int16 pump = analogRead(PUMP);
-  count = sqrt(pump)*20;
+  // count = sqrt(pump)*20;
 
   showColor(EN1, 30,  0, 80);
   showColor(EN2,  0, 80, 40);
@@ -134,4 +171,22 @@ void loop() {
   showColor(EN6, 80,  0, 20);
   showColor(EN7,  0,  60, 60);
   showColor(EN8,  60,  0, 60);
+
+  // showColor(EN1, 5*(0+offset), 5*(0+offset), 5*(0+offset));
+  // showColor(EN2, 5*(1+offset), 5*(1+offset), 5*(1+offset));
+  // showColor(EN3, 5*(2+offset), 5*(2+offset), 5*(2+offset));
+  // showColor(EN4, 5*(3+offset), 5*(3+offset), 5*(3+offset));
+  // showColor(EN5, 5*(4+offset), 5*(4+offset), 5*(4+offset));
+  // showColor(EN6, 5*(5+offset), 5*(5+offset), 5*(5+offset));
+  // showColor(EN7, 5*(6+offset), 5*(6+offset), 5*(6+offset));
+  // showColor(EN8, 5*(7+offset), 5*(7+offset), 5*(7+offset));
+  count+=2;
+}
+
+void loop() {
+  if (state==INIT) {
+    readInitData();
+  } else if (state==ACTIVE) {
+    runInteractive();
+  }
 }
